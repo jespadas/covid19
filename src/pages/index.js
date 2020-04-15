@@ -1,43 +1,27 @@
-import React, { useRef } from 'react';
+import React from 'react';
 import Helmet from 'react-helmet';
 import L from 'leaflet';
-import { Marker } from 'react-leaflet';
 
-import { promiseToFlyTo, getCurrentLocation } from 'lib/map';
+import { promiseToFlyTo, geoJsonToMarkers, clearMapLayers } from 'lib/map';
+import { trackerLocationsToGeoJson, trackerFeatureToHtmlMarker } from 'lib/coronavirus';
+import { useCoronavirusTracker } from 'hooks';
 
 import Layout from 'components/Layout';
 import Container from 'components/Container';
 import Map from 'components/Map';
 
-import gatsby_astronaut from 'assets/images/gatsby-astronaut.jpg';
-
 const LOCATION = {
-  lat: 38.9072,
-  lng: -77.0369
+  lat: 0,
+  lng: 0
 };
 const CENTER = [LOCATION.lat, LOCATION.lng];
-const DEFAULT_ZOOM = 2;
-const ZOOM = 10;
-
-const timeToZoom = 2000;
-const timeToOpenPopupAfterZoom = 4000;
-const timeToUpdatePopupAfterZoom = timeToOpenPopupAfterZoom + 3000;
-
-const popupContentHello = `<p>Hello 👋</p>`;
-const popupContentGatsby = `
-  <div class="popup-gatsby">
-    <div class="popup-gatsby-image">
-      <img class="gatsby-astronaut" src=${gatsby_astronaut} />
-    </div>
-    <div class="popup-gatsby-content">
-      <h1>Gatsby Leaflet Starter</h1>
-      <p>Welcome to your new Gatsby site. Now go build something great!</p>
-    </div>
-  </div>
-`;
+const DEFAULT_ZOOM = 1;
 
 const IndexPage = () => {
-  const markerRef = useRef();
+  const { data = [] } = useCoronavirusTracker({
+    api: 'countries'
+  });
+  const hasData = Array.isArray(data) && data.length > 0;
 
   /**
    * mapEffect
@@ -45,38 +29,55 @@ const IndexPage = () => {
    * @example Here this is and example of being used to zoom in and set a popup on load
    */
 
-  async function mapEffect({ leafletElement } = {}) {
-    if ( !leafletElement ) return;
+  async function mapEffect({ leafletElement: map } = {}) {
+    if ( !map || !hasData ) return;
 
-    const popup = L.popup({
-      maxWidth: 800
+    clearMapLayers({
+      map,
+      excludeByName: [ 'Mapbox' ]
+    })
+
+    const locationsGeoJson = trackerLocationsToGeoJson(data);
+
+    const locationsGeoJsonLayers = geoJsonToMarkers(locationsGeoJson, {
+      onClick: handleOnMarkerClick,
+      featureToHtml: trackerFeatureToHtmlMarker
     });
 
-    const location = await getCurrentLocation().catch(() => LOCATION );
+    const bounds = locationsGeoJsonLayers.getBounds();
 
-    const { current = {} } = markerRef || {};
-    const { leafletElement: marker } = current;
+    locationsGeoJsonLayers.addTo(map);
 
-    marker.setLatLng( location );
-    popup.setLatLng( location );
-    popup.setContent( popupContentHello );
+    map.fitBounds(bounds);
+  }
 
-    setTimeout( async () => {
-      await promiseToFlyTo( leafletElement, {
-        zoom: ZOOM,
-        center: location
-      });
+  function handleOnMarkerClick({ feature = {} } = {}, event = {}) {
+    const { target = {} } = event;
+    const { _map: map = {} } = target;
 
-      marker.bindPopup( popup );
+    const { geometry = {}, properties = {} } = feature;
+    const { coordinates } = geometry;
+    const { countryBounds, countryCode } = properties;
 
-      setTimeout(() => marker.openPopup(), timeToOpenPopupAfterZoom );
-      setTimeout(() => marker.setPopupContent( popupContentGatsby ), timeToUpdatePopupAfterZoom );
-    }, timeToZoom );
+    promiseToFlyTo(map, {
+      center: {
+        lat: coordinates[1],
+        lng: coordinates[0]
+      },
+      zoom: 3
+    });
+
+    if ( countryBounds && countryCode !== 'US' ) {
+      const boundsGeoJsonLayer = new L.GeoJSON(countryBounds);
+      const boundsGeoJsonLayerBounds = boundsGeoJsonLayer.getBounds();
+
+      map.fitBounds(boundsGeoJsonLayerBounds);
+    }
   }
 
   const mapSettings = {
     center: CENTER,
-    defaultBaseMap: 'OpenStreetMap',
+    defaultBaseMap: 'Mapbox',
     zoom: DEFAULT_ZOOM,
     mapEffect
   };
@@ -87,17 +88,26 @@ const IndexPage = () => {
         <title>Home Page</title>
       </Helmet>
 
-      <Map {...mapSettings}>
-        <Marker ref={markerRef} position={CENTER} />
-      </Map>
+      <Map {...mapSettings} />
 
       <Container type="content" className="text-center home-start">
-        <h2>Still Getting Started?</h2>
-        <p>Run the following in your terminal!</p>
-        <pre>
-          <code>gatsby new [directory] https://github.com/colbyfayock/gatsby-starter-leaflet</code>
-        </pre>
-        <p className="note">Note: Gatsby CLI required globally for the above command</p>
+        <h2>Demo Mapping App with Gatsby and React Leaflet</h2>
+        <ul>
+          <li>
+            Uses <a href="https://github.com/ExpDev07/coronavirus-tracker-api">github.com/ExpDev07/coronavirus-tracker-api</a> via <a href="https://coronavirus-tracker-api.herokuapp.com/">coronavirus-tracker-api.herokuapp.com</a>
+          </li>
+          <li>
+            Which uses jhu - <a href="https://github.com/CSSEGISandData/COVID-19">github.com/CSSEGISandData/COVID-19</a> - Worldwide Data repository operated by the Johns Hopkins University Center for Systems Science and Engineering (JHU CSSE).
+          </li>
+          <li>
+            And csbs - <a href="https://www.csbs.org/information-covid-19-coronavirus">csbs.org/information-covid-19-coronavirus</a> - U.S. County data that comes from the Conference of State Bank Supervisors.
+          </li>
+        </ul>
+
+        <h2>Want to build your own map?</h2>
+        <p>
+          Check out <a href="https://github.com/colbyfayock/gatsby-starter-leaflet">github.com/colbyfayock/gatsby-starter-leaflet</a>
+        </p>
       </Container>
     </Layout>
   );
