@@ -4,7 +4,7 @@
   "version": "0.2.2",
   "author": "Colby Fayock <hello@colbyfayock.com>",
   "dependencies": {
-    "axios": "^0.21.1",
+    "axios": "^1.6.0",
     "countries-list": "^2.5.4",
     "gatsby": "^2.19.43",
     "gatsby-plugin-react-helmet": "^3.1.23",
